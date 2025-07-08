@@ -1,0 +1,752 @@
+name: SukiSU_test4
+on:
+  workflow_dispatch:
+    inputs:
+      FEIL:
+        description: "Phone Model"
+        required: true
+        type: choice
+        options:
+          - 'oneplus_11'         # OP11
+          - 'oneplus_11r'        # OP11r
+          - 'oneplus_open'       # OP-OPEN
+          - 'oneplus_ace2'       # OP-ACE-2
+          - 'oneplus_10t'        # OP10t
+          - 'oneplus_10_pro'     # OP10pro
+          - 'oneplus_ace2_pro'   # OP-ACE-2-PRO
+          - 'oneplus_12r'        # OP12r
+          - 'oneplus_13'         # OP13
+          - 'oneplus_ace5_pro'   # OP-ACE5Pro
+          - 'oneplus_12'         # OP12
+          - 'oneplus_13r'        # OP13r
+          - 'oneplus_ace5'       # OP-ACE-5
+          - 'oneplus_ace_3v'     # OP-ACE-3V
+          - 'oneplus_nord_4'     # OP-NORD-4
+          - 'oneplus_pad2'       # OP-PAD-2
+          - 'oneplus_13s'        # OP13S
+          - 'oneplus_pad_2_pro'  # OP-PAD-2-PRO
+          - 'oneplus_pad_3'      # OP-PAD-3
+          - 'oneplus_ace3_pro'   # OP-ACE3-PRO
+          - 'oneplus_ace3'       # OP-ACE3
+          - 'oneplus_pad_pro'    # OP-PAD-PRO
+          - 'oneplus_nord_ce4'   # OP-NORD-CE4
+          - 'oneplus_9'          # OP9
+          - 'oneplus_9_pro'      # OP9pro
+          - 'oneplus_nord_3'     # OP-NORD-3
+        default: 'oneplus_13r'
+      KPM:
+        description: "Enable KPM"
+        required: true
+        type: choice
+        options:
+          - 'On'
+          - 'Off'
+        default: 'On'
+      VFS:
+        description: "Enable Manual Hooks (VFS)"
+        required: true
+        type: boolean
+        default: true
+      ZRAM:
+        description: "Add More ZRAM Algorithms"
+        required: true
+        type: boolean
+        default: false
+      SCHED:
+        description: "Add Fengchi Driver"
+        required: true
+        type: boolean
+        default: false
+      FAST_BUILD:
+        description: "Enable Fast Build"
+        required: true
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    name: ${{ github.event.inputs.VFS == 'true' && ' [VFS]' || '' }}${{ github.event.inputs.ZRAM == 'true' && ' [ZRAM]' || '' }}${{ github.event.inputs.SCHED == 'true' && ' [SCHED]' || '' }}For ${{ github.event.inputs.FEIL }} KPM ${{ github.event.inputs.KPM }}
+    runs-on: ubuntu-latest
+    env:
+      CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
+      CCACHE_NOHASHDIR: "true"
+      CCACHE_HARDLINK: "true"
+      CCACHE_MAXSIZE: 8G
+    steps:
+      - name: "🔍 Validate Input Combinations"
+        run: |
+          echo "🔧 Validating input combinations..."
+          FEIL="${{ github.event.inputs.FEIL }}"
+          
+          # Define valid combinations as an associative array
+          declare -A VALID_COMBINATIONS=(
+            ["oneplus_11"]="sm8550 kalama android13 5.15"
+            ["oneplus_11r"]="sm8475 waipio android12 5.10"
+            ["oneplus_open"]="sm8550 kalama android13 5.15"
+            ["oneplus_ace2"]="sm8475 waipio android12 5.10"
+            ["oneplus_10t"]="sm8475 waipio android12 5.10"
+            ["oneplus_10_pro"]="sm8450 waipio android12 5.10"
+            ["oneplus_ace2_pro"]="sm8550 kalama android13 5.15"
+            ["oneplus_12r"]="sm8550 kalama android13 5.15"
+            ["oneplus_12"]="sm8650 pineapple android14 6.1"
+            ["oneplus_13r"]="sm8650 pineapple android14 6.1"
+            ["oneplus_ace5"]="sm8650 pineapple android14 6.1"
+            ["oneplus_ace_3v"]="sm7675 pineapple android14 6.1"
+            ["oneplus_nord_4"]="sm7675 pineapple android14 6.1"
+            ["oneplus_pad2"]="sm8650 pineapple android14 6.1"
+            ["oneplus_13"]="sm8750 sun android15 6.6"
+            ["oneplus_ace5_pro"]="sm8750 sun android15 6.6"
+            ["oneplus_13s"]="sm8750 sun android15 6.6"
+            ["oneplus_pad_2_pro"]="sm8750 sun android15 6.6"
+            ["oneplus_pad_3"]="sm8750 sun android15 6.6"
+            ["oneplus_ace3_pro"]="sm8650 pineapple android14 6.1"
+            ["oneplus_ace3"]="sm8550 kalama android13 5.15"
+            ["oneplus_pad_pro"]="sm8550 kalama android13 5.15"
+            ["oneplus_nord_ce4"]="sm7675 pineapple android14 6.1"
+            ["oneplus_9"]="sm8350 lahaina android11 5.4"
+            ["oneplus_9_pro"]="sm8350 lahaina android11 5.4"
+            ["oneplus_nord_3"]="sm8475 waipio android12 5.10"
+          )
+          
+          # Check if FEIL exists in valid combinations
+          if [[ -n "${VALID_COMBINATIONS[$FEIL]}" ]]; then
+            # Get valid CPU, CPUD, ANDROID_VERSION, KERNEL_VERSION for the selected FEIL
+            read CPU CPUD ANDROID_VERSION KERNEL_VERSION <<< "${VALID_COMBINATIONS[$FEIL]}"
+            echo "✅ Valid combination: FEIL=$FEIL, CPU=$CPU, CPUD=$CPUD, ANDROID_VERSION=$ANDROID_VERSION, KERNEL_VERSION=$KERNEL_VERSION"
+            # Set environment variables for use in subsequent steps
+            echo "CPU=$CPU" >> $GITHUB_ENV
+            echo "CPUD=$CPUD" >> $GITHUB_ENV
+            echo "ANDROID_VERSION=$ANDROID_VERSION" >> $GITHUB_ENV
+            echo "KERNEL_VERSION=$KERNEL_VERSION" >> $GITHUB_ENV
+            # Set BUILD_TYPE based on ANDROID_VERSION and KERNEL_VERSION
+            if [ "$ANDROID_VERSION" = "android15" ] && [ "$KERNEL_VERSION" = "6.6" ]; then
+              echo "BUILD_TYPE=perf" >> $GITHUB_ENV
+            else
+              echo "BUILD_TYPE=gki" >> $GITHUB_ENV
+            fi
+          else
+            echo "❌ Unknown FEIL: $FEIL"
+            echo "Valid models:"
+            for model in "${!VALID_COMBINATIONS[@]}"; do
+              echo "- $model: ${VALID_COMBINATIONS[$model]}"
+            done
+            exit 1
+          fi
+      - name: "🚀 Maximize Build Space"
+        uses: easimon/maximize-build-space@master
+        with:
+          root-reserve-mb: 10240
+          temp-reserve-mb: 5120
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
+      - name: "⚙️ Setup Cache Environment"
+        run: |
+          echo "🔧 Setting up device-specific cache directory..."
+          echo "CCACHE_DIR=$HOME/.ccache_${{ github.event.inputs.FEIL }}_${{ env.KERNEL_VERSION }}" >> $GITHUB_ENV
+          mkdir -p "$HOME/.ccache_${{ github.event.inputs.FEIL }}_${{ env.KERNEL_VERSION }}"
+          echo "✅ Cache directory set: $HOME/.ccache_${{ github.event.inputs.FEIL }}_${{ env.KERNEL_VERSION }}"
+      - name: "🔐 Configure Git Account"
+        run: |
+          echo "🔧 Configuring Git user information..."
+          git config --global user.name "O+builder"
+          git config --global user.email "O+builder@gmail.com"
+          echo "✅ Git configuration completed"
+      - name: "📦 Configure APT Cache"
+        run: |
+          echo "🔧 Setting up APT cache directory..."
+          APT_CACHE_DIR="$HOME/apt-cache"
+          mkdir -p "$APT_CACHE_DIR"/{archives,lists/partial}
+          echo "Dir::Cache \"$APT_CACHE_DIR\";" | sudo tee /etc/apt/apt.conf.d/90user-cache
+          echo "Dir::Cache::archives \"$APT_CACHE_DIR/archives\";" | sudo tee -a /etc/apt/apt.conf.d/90user-cache
+          echo "Dir::State::lists \"$APT_CACHE_DIR/lists\";" | sudo tee -a /etc/apt/apt.conf.d/90user-cache
+          echo "Acquire::Check-Valid-Until \"false\";" | sudo tee -a /etc/apt/apt.conf.d/90user-cache
+          echo "Acquire::Languages \"none\";" | sudo tee -a /etc/apt/apt.conf.d/90user-cache
+          sudo chown -R $USER:$USER "$APT_CACHE_DIR"
+          echo "✅ APT cache configuration completed"
+      - name: "📦 Restore APT Cache"
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.HOME }}/apt-cache
+          key: ${{ runner.os }}-apt-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}-${{ hashFiles('.github/workflows/SukiSU.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-apt-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}-
+            ${{ runner.os }}-apt-
+      - name: "📦 Install Build Dependencies"
+        run: |
+          echo "🔧 Installing build dependencies..."
+          sudo rm -f /var/lib/apt/lists/lock /var/lib/dpkg/lock-frontend /var/cache/apt/archives/lock
+          APT_CACHE_DIR="$HOME/apt-cache"
+          mkdir -p "$APT_CACHE_DIR/lists/partial"
+          sudo apt-get -o Dir::Cache="$APT_CACHE_DIR" update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get -o Dir::Cache="$APT_CACHE_DIR" install -yq --no-install-recommends \
+            python3 git curl ccache libelf-dev build-essential flex bison libssl-dev \
+            liblz4-tool zlib1g-dev libxml2-utils rsync unzip bc lld pahole zip \
+            gcc python-is-python3 clang llvm wget cmake
+          echo "✅ Build dependencies installed"
+      - name: "📦 Install LLVM"
+        run: |
+          echo "🔧 Installing LLVM 20..."
+          wget -q https://apt.llvm.org/llvm.sh
+          sudo chmod +x llvm.sh
+          sudo ./llvm.sh 20 all
+          sudo rm -f llvm.sh
+          echo "✅ LLVM 20 installed"
+      - name: "📦 Optimize Memory"
+        run: |
+          echo "🔧 Applying memory optimizations..."
+          sudo -E sysctl vm.swappiness=1
+          sudo -E sysctl vm.min_free_kbytes=65536
+          sudo -E sysctl vm.watermark_scale_factor=100
+          sudo -E sysctl vm.watermark_boost_factor=15000
+          sudo -E sysctl vm.overcommit_memory=1
+          sudo -E sysctl vm.page-cluster=0
+          echo "✅ sysctl settings applied"
+          if lsmod | grep -q zram || modprobe zram 2>/dev/null; then
+            echo "✅ zram module available, configuring..."
+            echo "0" | sudo -E tee /sys/class/block/zram0/mem_limit
+            echo "zstd" | sudo -E tee /sys/class/block/zram0/comp_algorithm
+            echo "$(awk 'NR==1{print $2*1000}' </proc/meminfo)" | sudo -E tee /sys/class/block/zram0/disksize
+            sudo -E mkswap /dev/zram0
+            sudo -E swapon -p 100 /dev/zram0
+            echo "✅ ZRAM configured"
+          else
+            echo "⚠️ zram module not found, skipping ZRAM configuration"
+          fi
+          if [ -f /sys/kernel/mm/lru_gen/enabled ]; then
+            echo "Y" | sudo -E tee /sys/kernel/mm/lru_gen/enabled
+            echo "1000" | sudo -E tee /sys/kernel/mm/lru_gen/min_ttl_ms
+            echo "✅ LRU generation settings applied"
+          else
+            echo "⚠️ LRU generation settings not supported, skipping"
+          fi
+          if [ -f /sys/kernel/mm/swap/vma_ra_enabled ]; then
+            echo "1" | sudo -E tee /sys/kernel/mm/swap/vma_ra_enabled
+            echo "✅ VMA readahead enabled"
+          else
+            echo "⚠️ VMA readahead not supported, skipping"
+          fi
+          echo "✅ Memory optimization completed"
+      - name: "💾 Restore ccache"
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-${{ runner.os }}-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}-${{ github.event.inputs.FEIL }}-${{ github.sha }}
+          restore-keys: |
+            ccache-${{ runner.os }}-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}-${{ github.event.inputs.FEIL }}-
+            ccache-${{ runner.os }}-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}-
+            ccache-${{ runner.os }}-
+      - name: "⚙️ Initialize ccache"
+        run: |
+          echo "🔧 Initializing ccache..."
+          if command -v ccache >/dev/null 2>&1; then
+            ccache -M ${{ env.CCACHE_MAXSIZE }} -F 0
+            ccache -o cache_dir="${{ env.CCACHE_DIR }}"
+            echo "✅ ccache initialized with max size ${{ env.CCACHE_MAXSIZE }}"
+          else
+            echo "⚠️ ccache not found, skipping initialization"
+          fi
+          ccache -s
+      - name: "📥 Install Repo Tool"
+        run: |
+          echo "⬇️ Downloading repo tool..."
+          curl -fsSL https://storage.googleapis.com/git-repo-downloads/repo > ~/repo
+          chmod a+x ~/repo
+          sudo mv ~/repo /usr/local/bin/repo
+          echo "✅ Repo tool installation completed"
+      - name: "⬇️ Clone Kernel Source and Setup Manifest"
+        run: |
+          echo "🌐 Initializing kernel repository..."
+          mkdir -p kernel_workspace && cd kernel_workspace
+          # Use oneplus_11_t.xml for oneplus_11, otherwise use FEIL.xml
+          if [ "${{ github.event.inputs.FEIL }}" = "oneplus_11" ]; then
+            manifest_file="oneplus_11_t.xml"
+          else
+            manifest_file="${{ github.event.inputs.FEIL }}.xml"
+          fi
+          # Initialize repo
+          repo init -u https://github.com/OnePlusOSS/kernel_manifest.git -b refs/heads/oneplus/${{ env.CPU }} -m "$manifest_file" --depth=1
+          if [ $? -ne 0 ]; then
+            echo "❌ Failed to initialize repo with manifest $manifest_file"
+            exit 1
+          fi
+          echo "🔄 Synchronizing code repository (using $(nproc --all) threads)..."
+          repo sync -c -j$(nproc --all) --no-tags --no-clone-bundle --force-sync
+          if [ $? -ne 0 ]; then
+            echo "❌ Failed to sync repository"
+            exit 1
+          fi
+          # Download manifest file to .repo/manifests_fallback/ for compatibility
+          echo "📥 Downloading manifest $manifest_file for version checking..."
+          mkdir -p .repo/manifests_fallback
+          curl -LO --retry 5 --retry-delay 2 --retry-connrefused "https://raw.githubusercontent.com/OnePlusOSS/kernel_manifest/oneplus/${{ env.CPU }}/$manifest_file"
+          mv "$manifest_file" ".repo/manifests_fallback/$manifest_file"
+          # Remove protected exports files
+          rm -f kernel_platform/common/android/abi_gki_protected_exports_* || echo "No protected exports in common!"
+          rm -f kernel_platform/msm-kernel/android/abi_gki_protected_exports_* || echo "No protected exports in msm-kernel!"
+      - name: "⚡ Setup SukiSU Ultra"
+        run: |
+          echo "🛠️ Setting up SukiSU Ultra..."
+          cd kernel_workspace/kernel_platform
+          curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s susfs-main
+          cd ./KernelSU
+          KSU_VERSION=$(expr $(/usr/bin/git rev-list --count main) "+" 10700)
+          echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
+          export KSU_VERSION=$KSU_VERSION
+          sed -i "s/DKSU_VERSION=12800/DKSU_VERSION=${KSU_VERSION}/" kernel/Makefile
+          echo "✅ SukiSU Ultra configuration completed"
+      - name: "🔧 Set up SUSFS"
+        run: |
+          cd kernel_workspace
+          echo "⬇️ Downloading SUSFS patches..."
+          git clone https://gitlab.com/simonpunk/susfs4ksu.git -b gki-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}
+          git clone https://github.com/Xiaomichael/kernel_patches.git
+          git clone https://github.com/ShirkNeko/SukiSU_patch.git
+          git clone https://github.com/Lama3L9R/sukisu-quick-setup.git
+          cd kernel_platform
+          echo "📝 Copying patch files..."
+          cp ../susfs4ksu/kernel_patches/50_add_susfs_in_gki-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch ./common/
+          cp ../susfs4ksu/kernel_patches/fs/* ./common/fs/
+          cp ../susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
+          if [ "${{ github.event.inputs.ZRAM }}" = "true" ]; then
+            echo "📝 Copying ZRAM patch files..."
+            cp -r ../SukiSU_patch/other/zram/lz4k/include/linux/* ./common/include/linux/
+            cp -r ../SukiSU_patch/other/zram/lz4k/lib/* ./common/lib/
+            cp -r ../SukiSU_patch/other/zram/lz4k/crypto/* ./common/crypto/
+            cp -r ../SukiSU_patch/other/zram/lz4k_oplus ./common/lib/
+          fi
+          echo "🔧 Applying patches..."
+          cd ./common
+          GKI_V="${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}"
+          SUBLEVEL=$(grep '^SUBLEVEL *=' Makefile | head -n1 | cut -d= -f2 | tr -d ' ')
+          if [ "$GKI_V" == "android13-5.15" ] && [ "$SUBLEVEL" -lt 123 ]; then
+            echo "Fixing legacy issues for kernel versions 5.15.0 to 5.15.123..."
+            curl -Lo fix_5.15.legacy.patch --retry 5 --retry-delay 2 --retry-connrefused https://raw.githubusercontent.com/Numbersf/Action-Build/SukiSU-Ultra/patches/fix_5.15.legacy
+            patch -p1 < fix_5.15.legacy.patch
+            echo "✅ fix_5.15.legacy.patch applied"
+          fi
+          if [ "${{ env.KERNEL_VERSION }}" == "6.6" ]; then
+            TRUSTY_EXISTS="false"
+            if grep -qr 'common-modules/trusty' "$GITHUB_WORKSPACE/.repo/manifests_fallback/${{ github.event.inputs.FEIL }}.xml"; then
+              TRUSTY_EXISTS="true"
+            fi
+            echo "trusty_exists=$TRUSTY_EXISTS" >> $GITHUB_OUTPUT
+            if [ "$TRUSTY_EXISTS" = "false" ]; then
+              echo "Fixing susfs issues for some models with kernel version 6.6..."
+              sed -i 's/-32,12 +32,38/-32,11 +32,37/g' 50_add_susfs_in_gki-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch
+              sed -i '/#include <trace\/hooks\/fs.h>/d' 50_add_susfs_in_gki-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch
+            fi
+          fi
+          patch -p1 < 50_add_susfs_in_gki-${{ env.ANDROID_VERSION }}-${{ env.KERNEL_VERSION }}.patch || true
+          echo "✅ SUSFS patch applied"
+          cp ../../kernel_patches/69_hide_stuff.patch ./
+          patch -p1 -F 3 < 69_hide_stuff.patch
+          echo "✅ Hide stuff patch applied"
+          cp ../../kernel_patches/next/syscall_hooks.patch ./
+          patch -p1 -F 3 < syscall_hooks.patch
+          echo "✅ Syscall hooks patch applied"
+          if [ "${{ github.event.inputs.ZRAM }}" = "true" ]; then
+            cp ../../SukiSU_patch/other/zram/zram_patch/${{ env.KERNEL_VERSION }}/lz4kd.patch ./
+            patch -p1 -F 3 < lz4kd.patch || true
+            echo "✅ lz4kd.patch applied"
+            cp ../../SukiSU_patch/other/zram/zram_patch/${{ env.KERNEL_VERSION }}/lz4k_oplus.patch ./
+            patch -p1 -F 3 < lz4k_oplus.patch || true
+            echo "✅ lz4k_oplus.patch applied"
+          fi
+      - name: "🔧 Apply OGKI to GKI Conversion"
+        if: ${{ env.KERNEL_VERSION == '6.6' }}
+        run: |
+          cd kernel_workspace/kernel_platform/common
+          sed -i '1iobj-y += hmbird_patch.o' drivers/Makefile
+          wget https://github.com/Numbersf/Action-Build/raw/SukiSU-Ultra/patches/hmbird_patch.patch
+          echo "Applying OGKI to GKI conversion patch..."
+          patch -p1 -F 3 < hmbird_patch.patch
+          echo "✅ OGKI to GKI conversion patch applied"
+      - name: "🔧 Add Fengchi Scheduler"
+        if: ${{ github.event.inputs.SCHED == 'true' }}
+        run: |
+          cd kernel_workspace/kernel_platform
+          git clone https://github.com/HanKuCha/sched_ext.git
+          cp -r ./sched_ext/* ./common/kernel/sched
+          rm -rf ./sched_ext/.git
+          echo "✅ Fengchi scheduler added"
+      - name: "⚙️ Configure Kernel Options"
+        run: |
+          echo "⚙️ Configuring kernel build options with ThinLTO..."
+          cd kernel_workspace/kernel_platform
+          CONFIG_FILE=./common/arch/arm64/configs/gki_defconfig
+          echo "CONFIG_KSU=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KPM=y" >> "$CONFIG_FILE"
+          if [ "${{ github.event.inputs.VFS }}" = "true" ]; then
+            echo "CONFIG_KSU_SUSFS_SUS_SU=n" >> "$CONFIG_FILE"
+            echo "CONFIG_KSU_MANUAL_HOOK=y" >> "$CONFIG_FILE"
+          else
+            echo "CONFIG_KSU_SUSFS_SUS_SU=y" >> "$CONFIG_FILE"
+            echo "CONFIG_KPROBES=y" >> "$CONFIG_FILE"
+          fi
+          echo "CONFIG_KSU_SUSFS=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_SUS_PATH=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_SUS_KSTAT=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_SUS_OVERLAYFS=n" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_TRY_UMOUNT=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_SPOOF_UNAME=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_ENABLE_LOG=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >> "$CONFIG_FILE"
+          echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >> "$CONFIG_FILE"
+          echo "CONFIG_TMPFS_XATTR=y" >> "$CONFIG_FILE"
+          echo "CONFIG_TMPFS_POSIX_ACL=y" >> "$CONFIG_FILE"
+          echo "CONFIG_TCP_CONG_ADVANCED=y" >> "$CONFIG_FILE"
+          echo "CONFIG_TCP_CONG_BBR=y" >> "$CONFIG_FILE"
+          echo "CONFIG_NET_SCH_FQ=y" >> "$CONFIG_FILE"
+          echo "CONFIG_TCP_CONG_BIC=n" >> "$CONFIG_FILE"
+          echo "CONFIG_TCP_CONG_WESTWOOD=n" >> "$CONFIG_FILE"
+          echo "CONFIG_TCP_CONG_HTCP=n" >> "$CONFIG_FILE"
+          echo "CONFIG_IP_ECN=y" >> "$CONFIG_FILE"
+          echo "CONFIG_TCP_ECN=y" >> "$CONFIG_FILE"
+          echo "CONFIG_IPV6_ECN=y" >> "$CONFIG_FILE"
+          echo "CONFIG_IP_NF_TARGET_ECN=y" >> "$CONFIG_FILE"
+          sed -i '/CONFIG_DEFAULT_CUBIC/d' "$CONFIG_FILE"
+          echo "CONFIG_DEFAULT_CUBIC=n" >> "$CONFIG_FILE"
+          sed -i '/CONFIG_DEFAULT_TCP_CONG/d' "$CONFIG_FILE"
+          echo "CONFIG_DEFAULT_TCP_CONG=\"bbr\"" >> "$CONFIG_FILE"
+          echo "CONFIG_DEBUG_KERNEL=n" >> "$CONFIG_FILE"
+          echo "CONFIG_DYNAMIC_DEBUG=n" >> "$CONFIG_FILE"
+          echo "CONFIG_DEBUG_INFO=n" >> "$CONFIG_FILE"
+          echo "CONFIG_MQ_IOSCHED_SSG=y" >> "$CONFIG_FILE"
+          echo "CONFIG_MQ_IOSCHED_SSG_CGROUP=y" >> "$CONFIG_FILE"
+          echo "CONFIG_LLVM_POLLY=y" >> "$CONFIG_FILE"
+          echo "CONFIG_LD_DEAD_CODE_DATA_ELIMINATION=y" >> "$CONFIG_FILE"
+          sed -i '/CONFIG_LTO_NONE/d' "$CONFIG_FILE"
+          sed -i '/CONFIG_LTO_CLANG_FULL/d' "$CONFIG_FILE"
+          sed -i '/CONFIG_LTO_CLANG_THIN/d' "$CONFIG_FILE"
+          sed -i '/CONFIG_LTO_CLANG/d' "$CONFIG_FILE"
+          echo "CONFIG_LTO_CLANG=y" >> "$CONFIG_FILE"
+          echo "CONFIG_LTO_CLANG_THIN=y" >> "$CONFIG_FILE"
+          echo "CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE=y" >> "$CONFIG_FILE"
+          if [ "${{ github.event.inputs.ZRAM }}" = "true" ]; then
+            echo "CONFIG_CRYPTO_LZ4HC=y" >> "$CONFIG_FILE"
+            echo "CONFIG_CRYPTO_LZ4K=y" >> "$CONFIG_FILE"
+            echo "CONFIG_CRYPTO_LZ4KD=y" >> "$CONFIG_FILE"
+            echo "CONFIG_CRYPTO_842=y" >> "$CONFIG_FILE"
+            echo "CONFIG_CRYPTO_LZ4K_OPLUS=y" >> "$CONFIG_FILE"
+            echo "CONFIG_ZRAM_WRITEBACK=y" >> "$CONFIG_FILE"
+          fi
+          sed -i 's/check_defconfig//' ./common/build.config.gki
+          echo "✅ Kernel configuration updated successfully with ThinLTO"
+      - name: "Disable OnePlus Kernel Module"
+        run: |
+          cd kernel_workspace/kernel_platform
+          CONFIG_FILE=./common/arch/arm64/configs/gki_defconfig
+          sed -i 's/CONFIG_REGMAP_KUNIT=m/CONFIG_REGMAP_KUNIT=n/g' "$CONFIG_FILE"
+          sed -i 's/CONFIG_INPUT_KUNIT_TEST=m/CONFIG_INPUT_KUNIT_TEST=n/g' "$CONFIG_FILE"
+          sed -i 's/CONFIG_SND_SOC_TOPOLOGY_KUNIT_TEST=m/CONFIG_SND_SOC_TOPOLOGY_KUNIT_TEST=n/g' "$CONFIG_FILE"
+          sed -i 's/CONFIG_SND_SOC_UTILS_KUNIT_TEST=m/CONFIG_SND_SOC_UTILS_KUNIT_TEST=n/g' "$CONFIG_FILE"
+          sed -i 's/CONFIG_HID_KUNIT_TEST=m/CONFIG_HID_KUNIT_TEST=n/g' "$CONFIG_FILE"
+          sed -i 's/CONFIG_RTC_LIB_KUNIT_TEST=m/CONFIG_RTC_LIB_KUNIT_TEST=n/g' "$CONFIG_FILE"
+          sed -i 's/CONFIG_CLK_KUNIT_TEST=m/CONFIG_CLK_KUNIT_TEST=n/g' "$CONFIG_FILE"
+          sed -i 's/CONFIG_CLK_GATE_KUNIT_TEST=m/CONFIG_CLK_GATE_KUNIT_TEST=n/g' "$CONFIG_FILE"
+          sed -i 's/CONFIG_IIO_FORMAT_KUNIT_TEST=m/CONFIG_IIO_FORMAT_KUNIT_TEST=n/g' "$CONFIG_FILE"
+          sed -i 's/CONFIG_EXT4_KUNIT_TESTS=m/CONFIG_EXT4_KUNIT_TESTS=n/g' "$CONFIG_FILE"
+          sed -i 's/CONFIG_FAT_KUNIT_TEST=m/CONFIG_FAT_KUNIT_TEST=n/g' "$CONFIG_FILE"
+      - name: "✏️ Modify Version Strings"
+        run: |
+          echo "✏️ Modifying version string settings..."
+          cd kernel_workspace/kernel_platform
+          
+          # Extract ANDROID_VERSION and KERNEL_VERSION from environment
+          ANDROID_VERSION="${{ env.ANDROID_VERSION }}"
+          KERNEL_VERSION="${{ env.KERNEL_VERSION }}"
+          FEIL="${{ github.event.inputs.FEIL }}"
+          echo "Device: $FEIL"
+          echo "ANDROID_VERSION: $ANDROID_VERSION"
+          echo "KERNEL_VERSION: $KERNEL_VERSION"
+          
+          # Extract exact base kernel version from Makefile
+          if [ -f "common/Makefile" ]; then
+            VERSION=$(grep '^VERSION *=' common/Makefile | cut -d'=' -f2 | tr -d ' ')
+            PATCHLEVEL=$(grep '^PATCHLEVEL *=' common/Makefile | cut -d'=' -f2 | tr -d ' ')
+            SUBLEVEL=$(grep '^SUBLEVEL *=' common/Makefile | cut -d'=' -f2 | tr -d ' ' || echo "0")
+            BASE_KERNEL_VERSION="${VERSION}.${PATCHLEVEL}.${SUBLEVEL}"
+            echo "Base Kernel Version from Makefile: $BASE_KERNEL_VERSION"
+          else
+            # Fallback to KERNEL_VERSION from VALID_COMBINATIONS
+            BASE_KERNEL_VERSION="${KERNEL_VERSION}.0"
+            echo "Makefile not found, using fallback Base Kernel Version: $BASE_KERNEL_VERSION"
+          fi
+          
+          # Cross-check with manifest revision
+          MANIFEST_FILE=".repo/manifests_fallback/${FEIL}.xml"
+          if [ -f "$MANIFEST_FILE" ]; then
+            MANIFEST_REVISION=$(grep -oP '<project[^>]*name="android_kernel[^"]*"[^>]*revision="\K[^"]+' "$MANIFEST_FILE" | head -n1)
+            if [ -n "$MANIFEST_REVISION" ]; then
+              MANIFEST_KERNEL_VERSION=$(echo "$MANIFEST_REVISION" | grep -oP 'v?_?\K([0-9]+\.[0-9]+(?:\.[0-9]+)?)' || echo "")
+              if [ -n "$MANIFEST_KERNEL_VERSION" ] && [ "$MANIFEST_KERNEL_VERSION" != "$BASE_KERNEL_VERSION" ]; then
+                echo "Warning: Makefile version ($BASE_KERNEL_VERSION) differs from manifest version ($MANIFEST_KERNEL_VERSION). Using Makefile version."
+              fi
+              echo "Manifest Revision: $MANIFEST_REVISION"
+            else
+              echo "No revision found in manifest"
+            fi
+          else
+            echo "Manifest file not found: $MANIFEST_FILE"
+          fi
+          
+          # Generate dynamic VERSION_SUFFIX using VERSION_DIGIT derived from SUBLEVEL and commit hash
+          VERSION_DIGIT=$(if [ -n "$SUBLEVEL" ] && [ "$SUBLEVEL" != "0" ]; then echo $((SUBLEVEL % 11)); else echo "0"; fi)
+          COMMIT_HASH=$(git -C common rev-parse --short=12 HEAD 2>/dev/null || od -An -N7 -tx1 /dev/urandom | tr -d ' \n')
+          VERSION_SUFFIX="${VERSION_DIGIT}-o-g${COMMIT_HASH}"
+          echo "Generated VERSION_SUFFIX: $VERSION_SUFFIX"
+          
+          # Construct expected uname -r
+          EXPECTED_UNAME="${BASE_KERNEL_VERSION}-${ANDROID_VERSION}-${VERSION_SUFFIX}"
+          echo "Expected uname -r: $EXPECTED_UNAME"
+          
+          # Modify setlocalversion scripts
+          for path in \
+            common/scripts/setlocalversion \
+            msm-kernel/scripts/setlocalversion \
+            external/dtc/scripts/setlocalversion; do
+            [ -f "$path" ] || continue
+            echo "Modifying: $path"
+            # Remove -dirty
+            sed -i 's/ -dirty//g' "$path" || { echo "Failed to modify -dirty in $path"; exit 1; }
+            sed -i '$i res=$(echo "$res" | sed '\''s/-dirty//g'\'')' "$path" || { echo "Failed to append -dirty removal in $path"; exit 1; }
+            # Append ANDROID_VERSION and VERSION_SUFFIX
+            if grep -q 'KERNELVERSION.*scm_version' "$path"; then
+              echo "Detected NEW setlocalversion format"
+              sed -i "s|echo \"\${KERNELVERSION}.*scm_version}\"|echo \"\${KERNELVERSION}-${ANDROID_VERSION}-${VERSION_SUFFIX}\"|" "$path" || { echo "Failed to modify NEW setlocalversion format in $path"; exit 1; }
+            elif grep -q 'echo "\$res"' "$path"; then
+              echo "Detected OLD setlocalversion format"
+              tac "$path" | sed "0,/echo \"\\\$res\"/s//res=\\\$(echo \\\$res | cut -d- -f1)-${ANDROID_VERSION}-${VERSION_SUFFIX}; echo \"\\\$res\";/" | tac > "$path.tmp" && mv "$path.tmp" "$path" || { echo "Failed to modify OLD setlocalversion format in $path"; exit 1; }
+            else
+              echo "Unknown format, appending echo manually"
+              echo "echo \"\$res-${ANDROID_VERSION}-${VERSION_SUFFIX}\"" >> "$path" || { echo "Failed to append to $path"; exit 1; }
+            fi
+            chmod +x "$path"
+          done
+          
+          # Confirm Expected uname -r before build
+          echo "Expected uname -r during build: $EXPECTED_UNAME"
+          
+          # Update mkcompile_h to remove hardcoded UTS_VERSION
+          for mkcompile in common/scripts/mkcompile_h msm-kernel/scripts/mkcompile_h; do
+            if [ -f "$mkcompile" ]; then
+              echo "Patching $mkcompile to remove hardcoded UTS_VERSION"
+              sed -i 's/UTS_VERSION="#1 SMP PREEMPT .*/UTS_VERSION="#1 SMP PREEMPT $(date -u +%Y-%m-%d)"/' "$mkcompile" || { echo "Failed to patch $mkcompile"; exit 1; }
+            fi
+          done
+          
+          # Exclude .repo directory to avoid embedded repository warnings
+          echo ".repo/" > .gitignore
+          sed -i 's/check_defconfig//' ./common/build.config.gki || { echo "Failed to modify build.config.gki"; exit 1; }
+          sed -i 's/-dirty//' ./build/kernel/kleaf/workspace_status_stamp.py || echo "No workspace_status_stamp.py!"
+          git add -A
+          git commit -m "Custom version string with ANDROID_VERSION and suffix for $FEIL" || echo "No changes to commit"
+          
+          echo "✅ Version string modifications completed"
+      - name: "🔨 Build Kernel FAST"
+        if: ${{ github.event.inputs.FAST_BUILD == 'true' }}
+        id: fast_build
+        run: |
+          echo "🏗️ Starting fast kernel compilation with ThinLTO..."
+          KERNEL_VERSION="${{ env.KERNEL_VERSION }}"
+          case "$KERNEL_VERSION" in
+            "6.6")
+              export KBUILD_BUILD_TIMESTAMP="Wed Jun 18 13:44:55 UTC 2025"
+              CLANG_PATH="clang-r510928"
+              CLANG_DIR="prebuilts"
+              USE_LLVM_IAS=""
+              ;;
+            "6.1")
+              export KBUILD_BUILD_TIMESTAMP="Wed Jun 18 13:44:55 UTC 2025"
+              CLANG_PATH="clang-r510928"
+              CLANG_DIR="prebuilts"
+              USE_LLVM_IAS=""
+              ;;
+            "5.15")
+              export KBUILD_BUILD_TIMESTAMP="Wed Jun 18 13:44:55 UTC 2025"
+              CLANG_PATH="clang-r450784e"
+              CLANG_DIR="prebuilts"
+              USE_LLVM_IAS=""
+              ;;
+            "5.10")
+              export KBUILD_BUILD_TIMESTAMP="Wed Jun 18 13:44:55 UTC 2025"
+              CLANG_PATH="clang-r416183b"
+              CLANG_DIR="prebuilts-master"
+              USE_LLVM_IAS="LLVM_IAS=1"
+              ;;
+            "5.4")
+              export KBUILD_BUILD_TIMESTAMP="Wed Jun 18 13:44:55 UTC 2025"
+              CLANG_PATH="clang-r377782d"
+              CLANG_DIR="prebuilts"
+              USE_LLVM_IAS="LLVM_IAS=1"
+              ;;
+            *)
+              echo "fallback=true" >> "$GITHUB_OUTPUT"
+              echo "⚠️ Current kernel version \"$KERNEL_VERSION\" does not have a corresponding clang toolchain, falling back to using the official build script with ThinLTO"
+              cd kernel_workspace
+              export LTO=thin
+              export KCFLAGS="-O2 -flto=thin"
+              ./kernel_platform/oplus/build/oplus_build_kernel.sh ${{ env.CPUD }} ${{ env.BUILD_TYPE }}
+              ccache -s
+              echo "✅ Kernel compilation completed with fallback and ThinLTO"
+              exit 0
+              ;;
+          esac
+          export PATH="$GITHUB_WORKSPACE/kernel_workspace/kernel_platform/$CLANG_DIR/clang/host/linux-x86/$CLANG_PATH/bin:$PATH"
+          export PATH="/usr/lib/ccache:$PATH"
+          export CC="ccache clang"
+          sudo apt install libelf-dev
+          cd kernel_workspace/kernel_platform/common
+          make -j$(nproc --all) LLVM=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CC="ccache clang" RUSTC=../../prebuilts/rust/linux-x86/1.73.0b/bin/rustc PAHOLE=../../prebuilts/kernel-build-tools/linux-x86/bin/pahole LD=ld.lld HOSTLD=ld.lld O=out KCFLAGS+="-O2 -flto=thin" ${USE_LLVM_IAS} gki_defconfig all
+          ccache -s
+          echo "✅ Fast kernel compilation completed with ThinLTO"
+      - name: "🔨 Build Kernel (Non-Fast)"
+        if: ${{ github.event.inputs.FAST_BUILD != 'true' }}
+        run: |
+          echo "🏗️ Starting kernel compilation with official build script and ThinLTO..."
+          cd kernel_workspace
+          export LTO=thin
+          export KCFLAGS="-O2 -flto=thin"
+          ./kernel_platform/oplus/build/oplus_build_kernel.sh ${{ env.CPUD }} ${{ env.BUILD_TYPE }}
+          ccache -s
+          echo "✅ Kernel compilation completed with ThinLTO"
+      - name: "📦 Package Kernel"
+        run: |
+          echo "📦 Preparing AnyKernel3 packaging environment..."
+          git clone https://github.com/Numbersf/AnyKernel3 --depth=1
+          rm -rf ./AnyKernel3/.git
+          mkdir -p kernel_workspace/kernel_platform/out/FinalImageFind/
+          dir1=""
+          dir2=""
+          image_path=$(find "./kernel_workspace/kernel_platform/common/out/" -name "Image" | head -n 1)
+          if [ -n "$image_path" ]; then
+            dir1=$(dirname "$image_path")/
+            echo "Using unified path compiled with make, successfully found Image file"
+          else
+            image_path=$(find "./kernel_workspace/kernel_platform/out/" -name "Image" | head -n 1)
+            if [ -n "$image_path" ]; then
+              dir2=$(dirname "$image_path")/
+              echo "Compiled with official script, successfully found Image file"
+            else
+              echo "Image file not found, build failed" >&2
+              exit 1
+            fi
+          fi
+          if [ -n "$image_path" ] && [ -f "$image_path" ]; then
+            echo "Image file finally located at: $image_path"
+            cp "$image_path" ./AnyKernel3/Image
+            cp "$image_path" kernel_workspace/kernel_platform/out/FinalImageFind/Image
+          fi
+          if [ -n "$dir2" ] && [ "${{ env.CPU }}" = "sm8750" ]; then
+            echo "Currently building sm8750 with the official script, additional image files will be copied: dtbo.img, system_dlkm.img, vendor_dlkm.img, vendor_boot.img."
+            for file in dtbo.img system_dlkm.erofs.img vendor_dlkm.img vendor_boot.img; do
+              if [ -f "$dir2$file" ]; then
+                target_name="$file"
+                if [ "$file" = "system_dlkm.erofs.img" ]; then
+                  target_name="system_dlkm.img"
+                fi
+                cp "$dir2$file" "./AnyKernel3/$target_name"
+              else
+                echo "$file does not exist, skipping copy"
+              fi
+            done
+          fi
+      - name: "🧩 Patch Kernel Image (KPM)"
+        if: ${{ github.event.inputs.KPM == 'On' }}
+        run: |
+          echo "🔧 Applying KPM patch..."
+          cd kernel_workspace/kernel_platform/out/FinalImageFind
+          curl -LO --retry 5 --retry-delay 2 --retry-connrefused https://raw.githubusercontent.com/Numbersf/Action-Build/SukiSU-Ultra/patches/patch_linux
+          chmod +x patch_linux
+          ./patch_linux
+          rm -f Image
+          mv oImage Image
+          cp Image $GITHUB_WORKSPACE/AnyKernel3/Image
+          echo "✅ KPM patch applied successfully"
+      - name: Download Latest SUSFS Module from CI
+        continue-on-error: true
+        run: |
+          LATEST_RUN_ID=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/sidex15/susfs4ksu-module/actions/runs?status=success" | \
+            jq -r '.workflow_runs[] | select(.head_branch == "v1.5.2+") | .id' | head -n 1)
+          if [ -z "$LATEST_RUN_ID" ]; then
+            echo "No successful run found for branch v1.5.2+"
+          else
+            ARTIFACT_URL=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/sidex15/susfs4ksu-module/actions/runs/$LATEST_RUN_ID/artifacts" | jq -r '.artifacts[0].archive_download_url')
+            if [ -n "$ARTIFACT_URL" ]; then
+              curl -L -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -o ksu_module_susfs_1.5.2+_CI.zip "$ARTIFACT_URL"
+              cp ksu_module_susfs_1.5.2+_CI.zip ./AnyKernel3/
+            else
+              echo "Failed to fetch artifact URL"
+            fi
+          fi
+      - name: "📥 Download Latest SukiSU-Ultra APK from CI"
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "⬇️ Downloading latest SukiSU-Ultra APK..."
+          run_id=$(gh api \
+            "repos/SukiSU-Ultra/SukiSU-Ultra/actions/workflows/build-manager.yml/runs?branch=main&status=success&per_page=1" \
+            --jq '.workflow_runs[0].id' || echo "")
+          if [[ -z "$run_id" ]]; then
+            echo "No successful workflow run found. Skipping artifact download."
+          else
+            artifact_url=$(gh api \
+              "repos/SukiSU-Ultra/SukiSU-Ultra/actions/runs/$run_id/artifacts" | \
+              jq -r '.artifacts[] | select(.name == "manager") | .archive_download_url' | head -n1)
+            if [[ -z "$artifact_url" ]]; then
+              echo "No 'manager' artifact found in run $run_id. Skipping download."
+            else
+              echo "Downloading from: $artifact_url"
+              curl -fL -H "Authorization: token $GITHUB_TOKEN" -o manager.zip "$artifact_url"
+              unzip -j manager.zip "*.apk" -d ./AnyKernel3/
+              echo "✅ SukiSU-Ultra APK downloaded and copied to AnyKernel3"
+            fi
+          fi
+      - name: "🧠 Set Artifact Name"
+        id: set_name
+        run: |
+          file="${{ github.event.inputs.FEIL }}"
+          cpu="${{ env.CPU }}"
+          # Use oneplus_11_t.xml for oneplus_11, otherwise use FEIL.xml
+          if [ "$file" = "oneplus_11" ]; then
+            xml=".repo/manifests_fallback/oneplus_11_t.xml"
+          else
+            xml=".repo/manifests_fallback/$file.xml"
+          fi
+          file_base=$(echo "$file" | sed -E 's/_[a-z]$//')
+          revision_full=$(grep -oP '<project[^>]*name="android_kernel[^"]*"[^>]*revision="\K[^"]+' "$xml" | head -n1 || true)
+          if [ -n "$revision_full" ]; then
+            android_ver=$(echo "$revision_full" | grep -oP '_v?_?\K([0-9]+\.[0-9]+(?:\.[0-9]+)?)' || true)
+            if [ -n "$android_ver" ]; then
+              clean_file="${file_base}_Android${android_ver}"
+            else
+              clean_file="${file_base}_AndroidUnknown"
+            fi
+          else
+            clean_file="${file_base}_AndroidUnknown"
+          fi
+          suffix="${{ github.event.inputs.VFS == 'true' && '_VFS' || '' }}${{ github.event.inputs.ZRAM == 'true' && '_LZ4KD' || '' }}${{ github.event.inputs.KPM == 'On' && '_KPM' || '' }}${{ github.event.inputs.SCHED == 'true' && '_SCHED' || '' }}${{ github.event.inputs.FAST_BUILD == 'true' && '_FAST' || '' }}"
+          echo "ARTIFACT_NAME=AnyKernel3_SukiSUUltra_${{ env.KSUVER }}_${clean_file}${suffix}" >> $GITHUB_OUTPUT
+      - name: "📤 Upload AnyKernel3"
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.set_name.outputs.ARTIFACT_NAME }}
+          path: ./AnyKernel3/*
+      - name: "🤖 Get bot script"
+        uses: actions/checkout@v4
+        with:
+          path: bot
+      - name: "📊 Post-build disk check"
+        run: df -h
